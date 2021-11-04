@@ -218,7 +218,7 @@ init_preds = postprocess_qa_predictions(valid, tokenizer, valid_features, (valid
 init_test = postprocess_qa_predictions2(init_preds, valid)
 init_jaccard_score = compute_jaccard(init_test)
 print("init jaccard score:", init_jaccard_score)
-
+print("dsdsdsd")
 for i in range(20):
     torch.cuda.empty_cache()
 

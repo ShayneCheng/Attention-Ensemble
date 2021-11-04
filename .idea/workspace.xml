@@ -19,7 +19,10 @@
     <select />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="6fa3eb74-4b6c-4b18-873d-aefa24483546" name="Default Changelist" comment="data change" />
+    <list default="true" id="6fa3eb74-4b6c-4b18-873d-aefa24483546" name="Default Changelist" comment="data change">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -43,9 +46,11 @@
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="ROOT_SYNC" value="DONT_SYNC" />
   </component>
   <component name="JupyterTrust" id="41834a06-3229-4ab4-99dd-52db8fcecb56" />
   <component name="ProjectId" id="20RV4JPFdkfc0bRFdAnTBg8Nuje" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -53,7 +58,7 @@
   <component name="PropertiesComponent">
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
     <property name="WebServerToolWindowFactoryState" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/Attention-Ensemble" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="node.js.detected.package.eslint" value="true" />
     <property name="node.js.detected.package.tslint" value="true" />
     <property name="node.js.path.for.package.eslint" value="project" />
@@ -101,6 +106,7 @@
       <updated>1636007195113</updated>
       <workItem from="1636007196477" duration="4336000" />
       <workItem from="1636012173060" duration="15000" />
+      <workItem from="1636012324749" duration="943000" />
     </task>
     <task id="LOCAL-00001" summary="data">
       <created>1636010878187</created>
@@ -161,10 +167,10 @@
     </state>
     <state x="461" y="184" key="SettingsEditor/1920.0.1280.720/0.0.1920.1080@0.0.1920.1080" timestamp="1636007563323" />
     <state x="2061" y="10" key="SettingsEditor/1920.0.1280.720/0.0.1920.1080@1920.0.1280.720" timestamp="1636010776632" />
-    <state x="2153" y="94" key="Vcs.Push.Dialog.v2" timestamp="1636011460765">
+    <state x="2153" y="94" key="Vcs.Push.Dialog.v2" timestamp="1636012786619">
       <screen x="1920" y="0" width="1280" height="720" />
     </state>
-    <state x="2153" y="94" key="Vcs.Push.Dialog.v2/1920.0.1280.720/0.0.1920.1080@1920.0.1280.720" timestamp="1636011460765" />
+    <state x="2153" y="94" key="Vcs.Push.Dialog.v2/1920.0.1280.720/0.0.1920.1080@1920.0.1280.720" timestamp="1636012786619" />
     <state x="840" y="269" width="346" height="539" key="ftp.server.browser" timestamp="1636007544754">
       <screen x="0" y="0" width="1920" height="1080" />
     </state>
