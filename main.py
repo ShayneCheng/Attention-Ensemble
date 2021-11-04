@@ -80,7 +80,8 @@ sys.stdout = Logger('result102_3_no_bias.txt')
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_QUESTION_ANSWERING_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
-data = pd.read_csv('../kaggle/chaii-QA/train.csv').sample(frac=1, random_state=10086).reset_index(drop=True)
+#data = pd.read_csv('../kaggle/chaii-QA/train.csv').sample(frac=1, random_state=10086).reset_index(drop=True)
+data = pd.read_csv('data/train.csv').sample(frac=1, random_state=10086).reset_index(drop=True)
 valid_size = data.shape[0] // 5
 valid = data[:valid_size]
 train = data[valid_size:]
