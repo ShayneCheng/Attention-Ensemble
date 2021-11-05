@@ -180,6 +180,7 @@ class EnsembleModel(nn.Module):
             if_res=True,
     ):
         batch_size, ensemble_num, max_len, emb_dim = sequence_output.shape
+        """"""
         assert ensemble_num == self.ensemble_num
 
         text = sequence_output  # batch_size, ensemble_num, max_len, emb_dim

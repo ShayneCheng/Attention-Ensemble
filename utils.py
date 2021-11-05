@@ -26,14 +26,14 @@ from transformers import (
 class Config:
     # model
     model_type = 'xlm_roberta'
-    model_name_or_path = "../kaggle/xlm-roberta-large-squad-v2"
-    config_name = "../kaggle/xlm-roberta-large-squad-v2"
+    model_name_or_path = "xlm-roberta-large-squad-v2"
+    config_name = "xlm-roberta-large-squad-v2"
     fp16 = True if APEX_INSTALLED else False
     fp16_opt_level = "O1"
     gradient_accumulation_steps = 2
 
     # tokenizer
-    tokenizer_name = "../kaggle/xlm-roberta-large-squad-v2"
+    tokenizer_name = "xlm-roberta-large-squad-v2"
     max_seq_length = 400
     doc_stride = 135
 
@@ -280,6 +280,7 @@ def prepare_train_features(args, example, tokenizer):
         feature['context'] = example['context']
         feature['answer'] = example['answer_text']
 
+
         cls_index = input_ids.index(tokenizer.cls_token_id)
         sequence_ids = tokenized_example.sequence_ids(i)
 
@@ -319,3 +320,69 @@ def prepare_train_features(args, example, tokenizer):
 
 
 
+
+"""GMM"""
+
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+        self.max = 0
+        self.min = 1e5
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+        if val > self.max:
+            self.max = val
+        if val < self.min:
+            self.min = val
+
+
+def make_optimizer(args, model):
+    # optimizer_grouped_parameters = get_optimizer_grouped_parameters(args, model)
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+        },
+    ]
+    if args.optimizer_type == "AdamW":
+        optimizer = AdamW(
+            optimizer_grouped_parameters,
+            lr=args.learning_rate,
+            eps=args.epsilon,
+            correct_bias=True
+        )
+        return optimizer
+
+def make_scheduler(
+    args, optimizer,
+    num_warmup_steps,
+    num_training_steps
+):
+    if args.decay_name == "cosine-warmup":
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps
+        )
+    else:
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps
+        )
+    return scheduler
