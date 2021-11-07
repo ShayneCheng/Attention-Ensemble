@@ -96,137 +96,148 @@ def create_folds(data, num_splits):
 data = create_folds(data, num_splits=5)
 external_train["kfold"] = -1
 external_train['id'] = list(np.arange(1, len(external_train)+1))
-train = pd.concat([data, external_train]).reset_index(drop=True)
-data = shuffle(data)
-data = data[:100]
-valid_size = data.shape[0] // 5
+#data = pd.concat([data, external_train]).reset_index(drop=True)
 
+def generate_emnsemble_outputs(train, ifValid=False):
+    train['context'] = train['context'].apply(lambda x: ' '.join(x.split()))
+    train['question'] = train['question'].apply(lambda x: ' '.join(x.split()))
 
+    tokenizer = AutoTokenizer.from_pretrained(Config().tokenizer_name)
 
-for fold in range(5):
-    train = data[data['kfold'] != fold]
-    valid = data[data['kfold'] == fold]
-    print(train.shape)
-    print(valid.shape)
-    print('=' * 60+"fold:",fold)
-    def generate_emnsemble_outputs(train, ifValid=False):
-        train['context'] = train['context'].apply(lambda x: ' '.join(x.split()))
-        train['question'] = train['question'].apply(lambda x: ' '.join(x.split()))
-
-        tokenizer = AutoTokenizer.from_pretrained(Config().tokenizer_name)
-
-        train_features = []
-        for i, row in train.iterrows():
-            train_features += prepare_train_features(Config(), row, tokenizer)
-
-        args = Config()
-        train_dataset = DatasetRetriever(train_features, mode='train')
-        train_dataloader = DataLoader(
-            train_dataset,
-            batch_size=64,
-            sampler=SequentialSampler(train_dataset),
-            num_workers=optimal_num_of_loader_workers(),
-            pin_memory=True,
-            drop_last=False,
-            shuffle=False
-        )
-
-        #base_model = '../kaggle/5-folds-roberta792/output/'
-        base_model = '/share/apps/kaggle/'
-        def findFirst1(seq):
-            for i in range(len(seq)):
-                if seq[i] == 1:
-                    return i
-            return -1
-
-        def make_model(args):
-            config = AutoConfig.from_pretrained(args.config_name)
-            tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
-            model = Model(args.model_name_or_path, config=config)
-            return config, tokenizer, model
-
-        with torch.no_grad():
-            # print(torch.__version__)
-            _, _, model = make_model(Config())
-            model.cuda()
-
-            ensemble_sequence_outputs = []
-            fin_start_logits = None
-            fin_end_logits = None
-            for model_i in tqdm(range(5)):
-                checkpoint_path = 'checkpoint-fold-{}/pytorch_model.bin'.format(model_i)
-                model.load_state_dict(
-                    torch.load(base_model + checkpoint_path)
-                )
-                sequence_outputs = []
-                if ifValid:
-                    start_logits = []
-                    end_logits = []
-                for i, row in enumerate(tqdm(train_dataloader)):
-                    model.eval()
-
-                    start, end, sequence_output = model(row['input_ids'].cuda(), row['attention_mask'].cuda())
-                    sequence_outputs.append(sequence_output.detach().cpu())
-                    if ifValid:
-                        start_logits.append(start.detach().cpu().tolist())
-                        end_logits.append(end.detach().cpu().tolist())
-
-                    del start, end, sequence_output
-                gc.collect()
-                ensemble_sequence_outputs.append(torch.cat(sequence_outputs, 0).unsqueeze(0))
-                if ifValid:
-                    start_logits = np.vstack(start_logits)
-                    end_logits = np.vstack(end_logits)
-
-                    if fin_start_logits is None:
-                        fin_start_logits = start_logits
-                        fin_end_logits = end_logits
-                    else:
-                        fin_start_logits += start_logits
-                        fin_end_logits += end_logits
-
-            ensemble_sequence_outputs = torch.cat(ensemble_sequence_outputs, 0).permute(1, 0, 2,
-                                                                                        3)  # bs, ensemble_num, max_len, dim
-            model.to("cpu")
-            del model
-            for i in range(10):
-                torch.cuda.empty_cache()
-            gc.collect()
-            print(ensemble_sequence_outputs.shape)
-
-        #del train_dataset, train_dataloader
-        gc.collect()
-
-        train_ensemble_features = []
-
-        for idx in range(ensemble_sequence_outputs.shape[0]):
-            feature = dict()
-            feature["sequence_output"] = ensemble_sequence_outputs[idx]
-            feature["attention_mask"] = train_dataset.features[idx]["attention_mask"]
-            feature["offset_mapping"] = train_dataset.features[idx]["offset_mapping"]
-
-            # pooling mask
-            sequence_ids = train_dataset.features[idx]["sequence_ids2"]
-            feature["pooling_mask"], feature["question_bert_len"], feature["text_bert_len"] = build_pooling_mask(
-                sequence_ids)
-
-            # label
-            feature["start_position"] = train_dataset.features[idx]["start_position"]
-            feature["end_position"] = train_dataset.features[idx]["end_position"]
-            feature["binaray_label"] = 1 if (feature["start_position"] > 0 and feature["end_position"] > 0) else 0
-
-            # text
-            feature["example_id"] = train_dataset.features[idx]["example_id"]
-            feature["context"] = train_dataset.features[idx]["context"]
-            feature["answer"] = train_dataset.features[idx]["answer"]
-
-            train_ensemble_features.append(feature)
-        return train_ensemble_features, train_features, fin_start_logits, fin_end_logits
+    train_features = []
+    for i, row in train.iterrows():
+        train_features += prepare_train_features(Config(), row, tokenizer)
 
     args = Config()
-    config = AutoConfig.from_pretrained(args.config_name)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+    train_dataset = DatasetRetriever(train_features, mode='train')
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=64,
+        sampler=SequentialSampler(train_dataset),
+        num_workers=optimal_num_of_loader_workers(),
+        pin_memory=True,
+        drop_last=False,
+        shuffle=False
+    )
 
+    #base_model = '../kaggle/5-folds-roberta792/output/'
+    base_model = '/share/apps/kaggle/'
+    def findFirst1(seq):
+        for i in range(len(seq)):
+            if seq[i] == 1:
+                return i
+        return -1
+
+    def make_model(args):
+        config = AutoConfig.from_pretrained(args.config_name)
+        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+        model = Model(args.model_name_or_path, config=config)
+        return config, tokenizer, model
+
+    with torch.no_grad():
+        # print(torch.__version__)
+        _, _, model = make_model(Config())
+        model.cuda()
+
+        ensemble_sequence_outputs = []
+        fin_start_logits = None
+        fin_end_logits = None
+        for model_i in tqdm(range(5)):
+            checkpoint_path = 'checkpoint-fold-{}/pytorch_model.bin'.format(model_i)
+            model.load_state_dict(
+                torch.load(base_model + checkpoint_path)
+            )
+            sequence_outputs = []
+            if ifValid:
+                start_logits = []
+                end_logits = []
+            for i, row in enumerate(tqdm(train_dataloader)):
+                model.eval()
+
+                start, end, sequence_output = model(row['input_ids'].cuda(), row['attention_mask'].cuda())
+                sequence_outputs.append(sequence_output.detach().cpu())
+                if ifValid:
+                    start_logits.append(start.detach().cpu().tolist())
+                    end_logits.append(end.detach().cpu().tolist())
+
+                del start, end, sequence_output
+            gc.collect()
+            ensemble_sequence_outputs.append(torch.cat(sequence_outputs, 0).unsqueeze(0))
+            if ifValid:
+                start_logits = np.vstack(start_logits)
+                end_logits = np.vstack(end_logits)
+
+                if fin_start_logits is None:
+                    fin_start_logits = start_logits
+                    fin_end_logits = end_logits
+                else:
+                    fin_start_logits += start_logits
+                    fin_end_logits += end_logits
+
+        ensemble_sequence_outputs = torch.cat(ensemble_sequence_outputs, 0).permute(1, 0, 2,
+                                                                                    3)  # bs, ensemble_num, max_len, dim
+        model.to("cpu")
+        del model
+        for i in range(10):
+            torch.cuda.empty_cache()
+        gc.collect()
+        print(ensemble_sequence_outputs.shape)
+
+    #del train_dataset, train_dataloader
+    gc.collect()
+
+    train_ensemble_features = []
+
+    for idx in range(ensemble_sequence_outputs.shape[0]):
+        feature = dict()
+        feature["sequence_output"] = ensemble_sequence_outputs[idx]
+        feature["attention_mask"] = train_dataset.features[idx]["attention_mask"]
+        feature["offset_mapping"] = train_dataset.features[idx]["offset_mapping"]
+
+        # pooling mask
+        sequence_ids = train_dataset.features[idx]["sequence_ids2"]
+        feature["pooling_mask"], feature["question_bert_len"], feature["text_bert_len"] = build_pooling_mask(
+            sequence_ids)
+
+        # label
+        feature["start_position"] = train_dataset.features[idx]["start_position"]
+        feature["end_position"] = train_dataset.features[idx]["end_position"]
+        feature["binaray_label"] = 1 if (feature["start_position"] > 0 and feature["end_position"] > 0) else 0
+
+        # text
+        feature["example_id"] = train_dataset.features[idx]["example_id"]
+        feature["context"] = train_dataset.features[idx]["context"]
+        feature["answer"] = train_dataset.features[idx]["answer"]
+
+        train_ensemble_features.append(feature)
+    return train_ensemble_features, train_features, fin_start_logits, fin_end_logits
+
+
+print('=' * 60)
+
+args = Config()
+config = AutoConfig.from_pretrained(args.config_name)
+tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+
+
+
+def loss_fn(preds, labels):
+    start_preds, end_preds = preds
+    start_labels, end_labels = labels
+
+    start_loss = nn.CrossEntropyLoss(ignore_index=-1)(start_preds, start_labels)
+    end_loss = nn.CrossEntropyLoss(ignore_index=-1)(end_preds, end_labels)
+    total_loss = (start_loss + end_loss) / 2
+    return total_loss
+
+
+def make_loader(
+        args, data,
+        tokenizer, fold
+):
+    train, valid = data[data['kfold'] != fold], data[data['kfold'] == fold]
+    print(train.shape)
+    print(valid.shape)
     real_train_ensemble_features, train_features, _, _ = generate_emnsemble_outputs(train)
     valid_ensemble_features, valid_features, valid_start_logits, valid_end_logits = generate_emnsemble_outputs(valid,
                                                                                                                ifValid=True)
@@ -235,158 +246,264 @@ for fold in range(5):
     init_test = postprocess_qa_predictions2(init_preds, valid)
     init_jaccard_score = compute_jaccard(init_test)
     print("init jaccard score:", init_jaccard_score)
-
-    for i in range(20):
-        torch.cuda.empty_cache()
+    train_sampler = RandomSampler(real_train_ensemble_features)
+    valid_sampler = SequentialSampler(valid_ensemble_features)
 
     train_ensemble_dataset = EnsembleDataset(real_train_ensemble_features, mode='train')
-    train_ensemble_dataloader = DataLoader(
+    train_dataloader = DataLoader(
         train_ensemble_dataset,
-        batch_size=64,
+        batch_size=args.train_batch_size,
+        sampler=train_sampler,
         num_workers=optimal_num_of_loader_workers(),
         pin_memory=True,
-        drop_last=False,
-        shuffle=True,
+        drop_last=False
     )
-
     valid_ensemble_dataset = EnsembleDataset(valid_ensemble_features, mode='train')
-    valid_ensemble_dataloader = DataLoader(
+    valid_dataloader = DataLoader(
         valid_ensemble_dataset,
-        batch_size=128,
-        sampler=SequentialSampler(valid_ensemble_dataset),
+        batch_size=args.eval_batch_size,
+        sampler=valid_sampler,
         num_workers=optimal_num_of_loader_workers(),
         pin_memory=True,
-        drop_last=False,
+        drop_last=False
     )
 
-    ensemble_model = EnsembleModel(config=config)
-    print(ensemble_model)
-    ensemble_model.to("cuda")
+    return train_dataloader, valid_dataloader,valid,valid_features
 
-    lr = 1e-5
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam([p for p in ensemble_model.parameters() if p.requires_grad], lr=lr)
-    num_training_steps = math.ceil(len(train_ensemble_dataloader) / args.gradient_accumulation_steps) * args.epochs
+class Trainer:
+    def __init__(
+            self, model, tokenizer,
+            optimizer, scheduler
+    ):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+
+    def train(
+            self, args,
+            train_dataloader,
+            epoch, result_dict
+    ):
+        count = 0
+        losses = AverageMeter()
+
+        self.model.zero_grad()
+        self.model.train()
+
+        fix_all_seeds(args.seed)
+
+        for batch_idx, b_data in enumerate(train_dataloader):
+
+            outputs_start, outputs_end = self.model(
+                b_data["sequence_output"].cuda(), b_data["pooling_mask"].cuda(),
+                text_bert_len=b_data["text_bert_len"].cuda(),
+                attention_mask=b_data["attention_mask"].cuda()
+            )
+
+            loss = loss_fn((outputs_start, outputs_end), (b_data["start_position"].cuda(), b_data["end_position"].cuda()))
+            loss = loss / args.gradient_accumulation_steps
+
+            if args.fp16:
+                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
+
+            #count += input_ids.size(0)
+            losses.update(loss.item(), b_data["sequence_output"].size(0))
+
+            # if args.fp16:
+            #     torch.nn.utils.clip_grad_norm_(amp.master_params(self.optimizer), args.max_grad_norm)
+            # else:
+            #     torch.nn.utils.clip_grad_norm_(self.model.parameters(), args.max_grad_norm)
+
+            if batch_idx % args.gradient_accumulation_steps == 0 or batch_idx == len(train_dataloader) - 1:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
+
+            if (batch_idx % args.logging_steps == 0) or (batch_idx + 1) == len(train_dataloader):
+                _s = str(len(str(len(train_dataloader.sampler))))
+                ret = [
+                    ('Epoch: {:0>2} [{: >' + _s + '}/{} ({: >3.0f}%)]').format(epoch, count,
+                                                                               len(train_dataloader.sampler),
+                                                                               100 * count / len(
+                                                                                   train_dataloader.sampler)),
+                    'Train Loss: {: >4.5f}'.format(losses.avg),
+                ]
+                print(', '.join(ret))
+
+        result_dict['train_loss'].append(losses.avg)
+        return result_dict
+def make_model(args):
+    config = AutoConfig.from_pretrained(args.config_name)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+    model = Model(args.model_name_or_path, config=config)
+    return config, tokenizer, model
+def init_training(args, data, fold):
+    fix_all_seeds(args.seed)
+
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    # model
+    model_config = AutoConfig.from_pretrained(args.config_name)
+    model = EnsembleModel(config=config)
+
+    if torch.cuda.device_count() >= 1:
+        print('Model pushed to {} GPU(s), type {}.'.format(
+            torch.cuda.device_count(),
+            torch.cuda.get_device_name(0))
+        )
+        model = model.cuda()
+    else:
+        raise ValueError('CPU training is not supported')
+
+    # data loaders
+    train_dataloader, valid_dataloader,valid ,valid_features = make_loader(args, data, tokenizer, fold)
+
+    # optimizer
+    optimizer = make_optimizer(args, model)
+
+    # scheduler
+    num_training_steps = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps) * args.epochs
     if args.warmup_ratio > 0:
         num_warmup_steps = int(args.warmup_ratio * num_training_steps)
     else:
         num_warmup_steps = 0
-
+    print(f"Total Training Steps: {num_training_steps}, Total Warmup Steps: {num_warmup_steps}")
     scheduler = make_scheduler(args, optimizer, num_warmup_steps, num_training_steps)
-    epochs = 1
-    current_patience = 0
-    max_patience = 10
-    min_test_loss, min_epoch = 10000000, 0
-    max_jaccard, max_epoch = 0, 0
 
-    time1 = time.time()
-    t1 = datetime.datetime.fromtimestamp(time1)
-    t_tmp = t1
-    save_dir_best_loss = f"{fold}best_loss_model102.pt"
-    save_dir_best_jaccard = f"{fold}best_jaccard_model102.pt"
-    train_loss_list = []
-    valid_loss_list = []
-    valid_jaccard_list = []
-    for epoch in tqdm(range(1, epochs + 1)):
-        train_loss = []
-        for b_idx, b_data in enumerate(train_ensemble_dataloader):
-            ensemble_model.train()
-            optimizer.zero_grad()
+    # mixed precision training with NVIDIA Apex
+    if args.fp16:
+        model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
 
-            output = ensemble_model(b_data["sequence_output"].cuda(), b_data["pooling_mask"].cuda(),
-                                    text_bert_len=b_data["text_bert_len"].cuda(),
-                                    attention_mask=b_data["attention_mask"].cuda())
-            start_logits = output[0]
-            end_logits = output[1]
-            loss = loss_fn(start_logits, b_data["start_position"].cuda()) + loss_fn(end_logits,
-                                                                                    b_data["end_position"].cuda())
-            # loss /= start_logits.shape[0]
-            """GMM 梯度累加"""
+    result_dict = {
+        'epoch': [],
+        'train_loss': [],
+        'val_loss': [],
+        'best_val_loss': np.inf
+    }
 
-            loss = loss / 2
-            loss = loss / args.gradient_accumulation_steps
-            if args.fp16:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            # losses = AverageMeter()
-            # losses.update(loss.item(), b_data["sequence_output"].size(0))
+    return (
+        model, model_config, tokenizer, optimizer, scheduler,\
+        train_dataloader, valid_dataloader, result_dict,valid,valid_features
+    )
 
-            # loss.backward()
-            # optimizer.step()
 
-            if b_idx % args.gradient_accumulation_steps == 0 or b_idx == len(train_ensemble_dataloader) - 1:
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-            train_loss.append(loss.item())
-            del start_logits, end_logits, loss
-            gc.collect()
+class Evaluator:
+    def __init__(self, model,valid,valid_features):
+        self.model = model
+        self.valid = valid
+        self.valid_features = valid_features
 
+    def save(self, result, output_dir):
+        with open(f'{output_dir}/result_dict.json', 'w') as f:
+            f.write(json.dumps(result, sort_keys=True, indent=4, ensure_ascii=False))
+
+    def evaluate(self, valid_dataloader, epoch, result_dict):
+        losses = AverageMeter()
         start_logits = []
         end_logits = []
-        test_loss = []
-        for b_idx, b_data in enumerate(valid_ensemble_dataloader):
-            with torch.no_grad():
-                ensemble_model.eval()
-                output = ensemble_model(b_data["sequence_output"].cuda(), b_data["pooling_mask"].cuda(),
-                                        text_bert_len=b_data["text_bert_len"].cuda(),
-                                        attention_mask=b_data["attention_mask"].cuda())
+        for batch_idx, b_data in enumerate(valid_dataloader):
+            self.model = self.model.eval()
 
-                loss = loss_fn(output[0], b_data["start_position"].cuda()) + loss_fn(output[1],
-                                                                                     b_data["end_position"].cuda())
-                loss /= output[0].shape[0]
-                start = output[0].detach().cpu().numpy()
-                end = output[1].detach().cpu().numpy()
+            with torch.no_grad():
+                outputs_start, outputs_end = self.model(
+                    b_data["sequence_output"].cuda(), b_data["pooling_mask"].cuda(),
+                    text_bert_len=b_data["text_bert_len"].cuda(),
+                    attention_mask=b_data["attention_mask"].cuda()
+                )
+
+                loss = loss_fn((outputs_start, outputs_end),
+                               (b_data["start_position"].cuda(), b_data["end_position"].cuda()))
+
+                losses.update(loss.item(), b_data["sequence_output"].size(0))
+                start = outputs_start.detach().cpu().numpy()
+                end = outputs_end.detach().cpu().numpy()
                 start_logits.append(start)
                 end_logits.append(end)
-                test_loss.append(loss.item())
-
-                del output, start, end
-                gc.collect()
         start_logits = np.vstack(start_logits)
         end_logits = np.vstack(end_logits)
-        fin_preds = postprocess_qa_predictions(valid, tokenizer, valid_features, (start_logits, end_logits))
-        fin_test = postprocess_qa_predictions2(fin_preds, valid)
+        fin_preds = postprocess_qa_predictions(self.valid, tokenizer, self.valid_features, (start_logits, end_logits))
+        fin_test = postprocess_qa_predictions2(fin_preds, self.valid)
         jaccard_score = compute_jaccard(fin_test)
 
-        train_loss_epoch = sum(train_loss) / len(train_loss)
-        test_loss_epoch = sum(test_loss) / len(test_loss)
-        print("train loss:{}".format(train_loss_epoch) + "\tvalid loss:{}".format(test_loss_epoch))
+
+
         print("valid jaccard:{}".format(jaccard_score))
-
-        train_loss_list.append(train_loss_epoch)
-        valid_loss_list.append(test_loss_epoch)
         valid_jaccard_list.append(jaccard_score)
+        print('----Validation Results Summary----')
+        print('Epoch: [{}] Valid Loss: {: >4.5f}'.format(epoch, losses.avg))
+        result_dict['val_loss'].append(losses.avg)
+        return result_dict
+def run(data, fold):
+    args = Config()
+    model, model_config, tokenizer, optimizer, scheduler, train_dataloader, \
+    valid_dataloader, result_dict ,valid ,valid_features = init_training(args, data, fold)
 
-        if test_loss_epoch < min_test_loss:
-            min_test_loss = test_loss_epoch
-            min_epoch = epoch
-            save(ensemble_model, save_dir_best_loss)
-            print("new best loss model saved.")
+    trainer = Trainer(model, tokenizer, optimizer, scheduler)
+    evaluator = Evaluator(model,valid,valid_features)
 
-        if jaccard_score > max_jaccard:
-            max_jaccard = jaccard_score
-            max_epoch = epoch
-            save(ensemble_model, save_dir_best_jaccard)
-            print("new best jaccard model saved.")
-            current_patience = 0
-        else:
-            current_patience += 1
-            print("current_patience:" + str(current_patience))
+    train_time_list = []
+    valid_time_list = []
 
-        print('use time: ' + str(datetime.datetime.fromtimestamp(time.time()) - t_tmp))
-        t_tmp = datetime.datetime.fromtimestamp(time.time())
-        print("-" * 60)
-        print("-" * 60)
+    for epoch in range(args.epochs):
+        result_dict['epoch'].append(epoch)
 
-        if max_patience <= current_patience:
-            break
+        # Train
+        torch.cuda.synchronize()
+        tic1 = time.time()
+        result_dict = trainer.train(
+            args, train_dataloader,
+            epoch, result_dict
+        )
+        torch.cuda.synchronize()
+        tic2 = time.time()
+        train_time_list.append(tic2 - tic1)
 
-    time2 = time.time()
-    t2 = datetime.datetime.fromtimestamp(time2)
+        # Evaluate
+        torch.cuda.synchronize()
+        tic3 = time.time()
+        result_dict = evaluator.evaluate(
+            valid_dataloader, epoch, result_dict
+        )
+        torch.cuda.synchronize()
+        tic4 = time.time()
+        valid_time_list.append(tic4 - tic3)
 
-    print("all epoch use time:" + str(t2 - t1))
-    print("lowest loss epoch:{}, lowest loss:{}".format(min_epoch, min_test_loss))
-    print("highest jaccard epoch:{}, highest jaccard:{}".format(max_epoch, max_jaccard))
+        output_dir = os.path.join(args.output_dir, f"checkpoint-fold-{fold}")
+        if result_dict['val_loss'][-1] < result_dict['best_val_loss']:
+            print("{} Epoch, Best epoch was updated! Valid Loss: {: >4.5f}".format(epoch, result_dict['val_loss'][-1]))
+            result_dict["best_val_loss"] = result_dict['val_loss'][-1]
+
+            os.makedirs(output_dir, exist_ok=True)
+            torch.save(model.state_dict(), f"{output_dir}/pytorch_model.bin")
+            model_config.save_pretrained(output_dir)
+            tokenizer.save_pretrained(output_dir)
+            print(f"Saving model checkpoint to {output_dir}.")
+
+        print()
+
+    evaluator.save(result_dict, output_dir)
+
+    print(
+        f"Total Training Time: {np.sum(train_time_list)}secs, Average Training Time per Epoch: {np.mean(train_time_list)}secs.")
+    print(
+        f"Total Validation Time: {np.sum(valid_time_list)}secs, Average Validation Time per Epoch: {np.mean(valid_time_list)}secs.")
+
+    torch.cuda.empty_cache()
+    del trainer, evaluator
+    del model, model_config, tokenizer
+    del optimizer, scheduler
+    del train_dataloader, valid_dataloader, result_dict
+    gc.collect()
+
+valid_jaccard_list = []
+for fold in range(1):
+    print();print()
+    print('-'*50)
+    print(f'FOLD: {fold}')
+    print('-'*50)
+    run(data, fold)

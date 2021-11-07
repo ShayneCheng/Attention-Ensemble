@@ -38,7 +38,7 @@ class Config:
     doc_stride = 135
 
     # train
-    epochs = 1
+    epochs = 10
     train_batch_size = 4
     eval_batch_size = 128
 
